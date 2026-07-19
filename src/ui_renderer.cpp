@@ -186,7 +186,7 @@ void drawMainMenu(GfxRenderer& renderer, HalGPIO& gpio) {
     int yPos = 90 + (i * 45);
     const char* label = (i < 4) ? baseMenuItems[i] : otaApps[i - 4].name;
     if (i == mainMenuSelection) {
-      clippedFillRect(renderer, 5, yPos - 5, sw - 10, 35, tc);
+      clippedFillRect(renderer, 5, yPos - 4, sw - 10, 40, tc);
       drawClippedText(renderer, FONT_UI, 20, yPos, label, sw - 40, !tc);
     } else {
       drawClippedText(renderer, FONT_UI, 20, yPos, label, sw - 40, tc);
@@ -219,7 +219,7 @@ void drawFileBrowser(GfxRenderer& renderer, HalGPIO& gpio) {
   clippedLine(renderer, 5, 32, sw - 5, 32, tc);
 
   int fc = getFileCount();
-  int lineH = 30;
+  int lineH = 40;  // FONT_UI needs 34px + highlight margin or glyphs clip
   int listTop = 42;
   int footerH = 28;  // one line of FONT_SMALL with safe bottom margin
   int maxVisible = (sh - listTop - footerH) / lineH;
@@ -238,7 +238,7 @@ void drawFileBrowser(GfxRenderer& renderer, HalGPIO& gpio) {
     int yPos = listTop + (i - startIdx) * lineH;
 
     if (i == selectedFileIndex) {
-      clippedFillRect(renderer, 5, yPos - 3, sw - 10, lineH - 1, tc);
+      clippedFillRect(renderer, 5, yPos - 4, sw - 10, lineH - 2, tc);
       drawClippedText(renderer, FONT_UI, 15, yPos, files[i].title, sw - 30, !tc);
     } else {
       drawClippedText(renderer, FONT_UI, 15, yPos, files[i].title, sw - 30, tc);
@@ -512,12 +512,14 @@ void drawSettingsMenu(GfxRenderer& renderer, HalGPIO& gpio) {
   };
   const int SETTINGS_COUNT = 6;
 
-  // Compute line height to fit all items — use smaller spacing if needed
-  int lineH = 38;
+  // Compute line height to fit all items — use smaller spacing if needed.
+  // FONT_UI glyphs span 35px below the row top (27px ascender + 8px
+  // descender), so anything under ~38px clips letter bottoms.
+  int lineH = 42;
   int listTop = 50;
   if (listTop + SETTINGS_COUNT * lineH > sh - 70) {
     lineH = (sh - 70 - listTop) / SETTINGS_COUNT;
-    if (lineH < 24) lineH = 24;
+    if (lineH < 38) lineH = 38;
   }
 
   for (int i = 0; i < SETTINGS_COUNT; i++) {
@@ -525,7 +527,7 @@ void drawSettingsMenu(GfxRenderer& renderer, HalGPIO& gpio) {
     bool sel = (i == settingsSelection);
 
     if (sel) {
-      clippedFillRect(renderer, 5, yPos - 5, sw - 10, lineH - 6, !darkMode);
+      clippedFillRect(renderer, 5, yPos - 4, sw - 10, lineH - 2, !darkMode);
       drawClippedText(renderer, FONT_UI, 15, yPos, labels[i], sw / 2 - 15, darkMode);
     } else {
       drawClippedText(renderer, FONT_UI, 15, yPos, labels[i], sw / 2 - 15, !darkMode);

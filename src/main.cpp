@@ -618,6 +618,14 @@ static bool drawSleepBitmapCentered(FsFile& file) {
 }
 
 static bool renderSleepWallpaper() {
+  // Sleep wallpapers are portrait art: render them panel-native portrait
+  // regardless of the UI orientation (CrossInk does the same). The UI
+  // orientation is restored if nothing gets drawn so the text fallback
+  // keeps the user's setting; after a successful draw the device deep
+  // sleeps and re-applies the setting on wake.
+  const GfxRenderer::Orientation uiOrientation = renderer.getOrientation();
+  renderer.setOrientation(GfxRenderer::Portrait);
+
   static const char* kSleepDirs[] = {"/.sleep", "/sleep"};
   for (const char* dirPath : kSleepDirs) {
     FsFile dir = SdMan.open(dirPath);
@@ -662,6 +670,8 @@ static bool renderSleepWallpaper() {
     file.close();
     if (ok) return true;
   }
+
+  renderer.setOrientation(uiOrientation);
   return false;
 }
 
