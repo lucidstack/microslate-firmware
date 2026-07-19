@@ -85,10 +85,10 @@ def download_file(name):
 
 
 def get_local_files():
-    """Return dict of {filename: size} for .txt files in the local folder."""
+    """Return dict of {filename: size} for note files in the local folder."""
     result = {}
     for name in os.listdir(LOCAL_DIR):
-        if name.lower().endswith(".txt"):
+        if name.lower().endswith((".txt", ".md")):
             path = os.path.join(LOCAL_DIR, name)
             result[name] = os.path.getsize(path)
     return result

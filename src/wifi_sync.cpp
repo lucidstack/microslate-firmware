@@ -457,7 +457,9 @@ static void handleFileList() {
     if (name[0] == '.') { file.close(); continue; }
 
     int nameLen = strlen(name);
-    if (nameLen > 4 && strcmp(name + nameLen - 4, ".txt") == 0) {
+    bool isNote = (nameLen > 4 && strcasecmp(name + nameLen - 4, ".txt") == 0) ||
+                  (nameLen > 3 && strcasecmp(name + nameLen - 3, ".md") == 0);
+    if (isNote) {
       if (!first) json += ",";
       first = false;
       json += "{\"name\":\"";

@@ -32,9 +32,9 @@ static void filenameToTitle(const char* filename, char* out, int maxLen) {
 }
 
 // Convert a title to a valid FAT filename (lowercase, spaces->underscores,
-// non-alphanumeric stripped, ".txt" appended).
+// non-alphanumeric stripped, ".md" appended).
 static void titleToFilename(const char* title, char* out, int maxLen) {
-  int maxBase = maxLen - 5; // room for ".txt" + null
+  int maxBase = maxLen - 4; // room for ".md" + null
   int j = 0;
   for (int i = 0; title[i] != '\0' && j < maxBase; i++) {
     char c = title[i];
@@ -47,7 +47,7 @@ static void titleToFilename(const char* title, char* out, int maxLen) {
   }
   while (j > 0 && out[j - 1] == '_') j--;
   if (j == 0) { strncpy(out, "note", maxLen - 1); j = 4; }
-  strcpy(out + j, ".txt");
+  strcpy(out + j, ".md");
 }
 
 // Derive a unique /notes/ filename from a title, handling collisions with _2, _3 suffix.
@@ -58,14 +58,15 @@ void deriveUniqueFilename(const char* title, char* out, int maxLen) {
   snprintf(path, sizeof(path), "/notes/%s", out);
   if (!SdMan.exists(path)) return;
 
-  // Collision — strip .txt, try _2, _3 ...
+  // Collision — strip the extension, try _2, _3 ...
   char base[MAX_FILENAME_LEN];
   strncpy(base, out, maxLen - 1);
-  base[strlen(base) - 4] = '\0';
+  char* dot = strrchr(base, '.');
+  if (dot) *dot = '\0';
 
   int suffix = 2;
   while (SdMan.exists(path) && suffix <= 99) {
-    snprintf(out, maxLen, "%s_%d.txt", base, suffix++);
+    snprintf(out, maxLen, "%s_%d.md", base, suffix++);
     snprintf(path, sizeof(path), "/notes/%s", out);
   }
 }
@@ -105,7 +106,9 @@ void refreshFileList() {
     }
 
     int nameLen = strlen(name);
-    if (nameLen > 4 && strcasecmp(name + nameLen - 4, ".txt") == 0) {
+    bool isNote = (nameLen > 4 && strcasecmp(name + nameLen - 4, ".txt") == 0) ||
+                  (nameLen > 3 && strcasecmp(name + nameLen - 3, ".md") == 0);
+    if (isNote) {
       strncpy(fileList[fileCount].filename, name, MAX_FILENAME_LEN - 1);
       fileList[fileCount].filename[MAX_FILENAME_LEN - 1] = '\0';
 

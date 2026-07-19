@@ -1,5 +1,6 @@
 #include "ui_renderer.h"
 #include "config.h"
+#include "markdown.h"
 #include "text_editor.h"
 #include "file_manager.h"
 #include "ble_keyboard.h"
@@ -28,25 +29,37 @@ uint32_t getScanAgeMs();
 // Font data includes
 #include <builtinFonts/notosans_16_regular.h>
 #include <builtinFonts/notosans_16_bold.h>
+#include <builtinFonts/notosans_16_italic.h>
+#include <builtinFonts/notosans_16_bolditalic.h>
 #include <builtinFonts/notosans_14_regular.h>
 #include <builtinFonts/notosans_14_bold.h>
+#include <builtinFonts/notosans_14_italic.h>
+#include <builtinFonts/notosans_14_bolditalic.h>
 #include <builtinFonts/notosans_12_regular.h>
 #include <builtinFonts/notosans_12_bold.h>
+#include <builtinFonts/notosans_12_italic.h>
+#include <builtinFonts/notosans_12_bolditalic.h>
 #include <builtinFonts/ubuntu_10_regular.h>
 #include <builtinFonts/ubuntu_10_bold.h>
 
 // Font objects (file-scoped)
 static EpdFont ns16Regular(&notosans_16_regular);
 static EpdFont ns16Bold(&notosans_16_bold);
-static EpdFontFamily ns16Family(&ns16Regular, &ns16Bold);
+static EpdFont ns16Italic(&notosans_16_italic);
+static EpdFont ns16BoldItalic(&notosans_16_bolditalic);
+static EpdFontFamily ns16Family(&ns16Regular, &ns16Bold, &ns16Italic, &ns16BoldItalic);
 
 static EpdFont ns14Regular(&notosans_14_regular);
 static EpdFont ns14Bold(&notosans_14_bold);
-static EpdFontFamily ns14Family(&ns14Regular, &ns14Bold);
+static EpdFont ns14Italic(&notosans_14_italic);
+static EpdFont ns14BoldItalic(&notosans_14_bolditalic);
+static EpdFontFamily ns14Family(&ns14Regular, &ns14Bold, &ns14Italic, &ns14BoldItalic);
 
 static EpdFont ns12Regular(&notosans_12_regular);
 static EpdFont ns12Bold(&notosans_12_bold);
-static EpdFontFamily ns12Family(&ns12Regular, &ns12Bold);
+static EpdFont ns12Italic(&notosans_12_italic);
+static EpdFont ns12BoldItalic(&notosans_12_bolditalic);
+static EpdFontFamily ns12Family(&ns12Regular, &ns12Bold, &ns12Italic, &ns12BoldItalic);
 
 static EpdFont u10Regular(&ubuntu_10_regular);
 static EpdFont u10Bold(&ubuntu_10_bold);
@@ -270,12 +283,43 @@ static void drawEditorLine(GfxRenderer& renderer, int lineIdx, int x, int yPos,
   if (dispEnd > lineStart && buf[dispEnd - 1] == '\n') dispEnd--;
 
   int len = dispEnd - lineStart;
-  if (len > 0) {
-    char lineBuf[256];
-    int copyLen = (len < (int)sizeof(lineBuf) - 1) ? len : (int)sizeof(lineBuf) - 1;
-    strncpy(lineBuf, buf + lineStart, copyLen);
-    lineBuf[copyLen] = '\0';
-    drawClippedText(renderer, editorFontId(fontSize), x, yPos, lineBuf, maxW, tc);
+  if (len <= 0) return;
+
+  char lineBuf[256];
+  int copyLen = (len < (int)sizeof(lineBuf) - 1) ? len : (int)sizeof(lineBuf) - 1;
+  strncpy(lineBuf, buf + lineStart, copyLen);
+  lineBuf[copyLen] = '\0';
+
+  int font = editorFontId(fontSize);
+
+  // Markdown styled-source rendering: headings draw the whole line bold
+  // (same size — the editor's scroll/cursor math assumes uniform line
+  // height), inline runs handle **bold** and *italic*. NOTE: heading level
+  // is derived from the wrapped line, so only the first visual line of a
+  // wrapped heading is bold — fine for typical short headings.
+  int headingLevel = mdHeadingLevel(lineBuf, copyLen);
+  uint8_t baseStyle = headingLevel ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+
+  MdRun runs[24];
+  int runCount = mdParseInline(lineBuf, copyLen, baseStyle, runs, 24);
+
+  if (maxW <= 0) maxW = renderer.getScreenWidth() - x - 5;
+  int xCur = x;
+  char runBuf[256];
+  for (int r = 0; r < runCount; r++) {
+    int remaining = maxW - (xCur - x);
+    if (remaining <= 0) break;
+    memcpy(runBuf, lineBuf + runs[r].start, runs[r].len);
+    runBuf[runs[r].len] = '\0';
+    drawClippedText(renderer, font, xCur, yPos, runBuf, remaining, tc, runs[r].style);
+    xCur += renderer.getTextWidth(font, runBuf, runs[r].style);
+  }
+
+  // H1 gets an underline for hierarchy without breaking uniform line height
+  if (headingLevel == 1) {
+    int underlineY = yPos + renderer.getFontAscenderSize(font) + 3;
+    int underlineW = xCur - x;
+    if (underlineW > 0) clippedLine(renderer, x, underlineY, x + underlineW, underlineY, tc);
   }
 }
 
