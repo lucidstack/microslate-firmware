@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <esp_pm.h>
+#include <esp_sleep.h>
 #include <esp_ota_ops.h>
 #include <esp_app_format.h>
 #include <Preferences.h>
@@ -193,6 +194,27 @@ void setup() {
   setCpuFrequencyMhz(80);
 
   gpio.begin();
+
+  // CrossInk-style wake verification: on a power-button wake from deep sleep,
+  // require the button to stay held for ~200ms so a brief pocket/bag press
+  // goes straight back to sleep without ever touching the display. The pin is
+  // read directly (active-low, INPUT_PULLUP) — InputManager's debounced state
+  // has not settled this early in boot.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO &&
+      esp_reset_reason() == ESP_RST_DEEPSLEEP) {
+    int releasedSamples = 0;
+    const unsigned long wakeVerifyStart = millis();
+    while (millis() - wakeVerifyStart < 200) {
+      releasedSamples = (digitalRead(InputManager::POWER_BUTTON_PIN) == HIGH)
+                            ? releasedSamples + 1
+                            : 0;
+      if (releasedSamples >= 3) {
+        gpio.startDeepSleep();  // spurious wake — does not return
+      }
+      delay(10);
+    }
+  }
+
   display.begin();
 
   renderer.setFadingFix(true);  // Power down display analog circuits after each refresh — reduces idle drain
@@ -330,8 +352,10 @@ static void processPhysicalButtons() {
     powerPressStart = millis();
   }
 
+  // CrossInk-style: sleep fires the moment the hold passes 400ms — while the
+  // button is still down, not on release — so sleeping feels immediate.
   if (btnPower && powerHeld && !sleepTriggered) {
-    if (millis() - powerPressStart > 3000) {
+    if (millis() - powerPressStart > 400) {
       sleepTriggered = true;
       enterDeepSleep(SleepReason::POWER_LONGPRESS);
       return; // Exit early to prevent further processing
@@ -343,7 +367,7 @@ static void processPhysicalButtons() {
     unsigned long duration = millis() - powerPressStart;
     powerHeld = false;
 
-    if (!sleepTriggered && duration > 50 && duration < 1000) {
+    if (!sleepTriggered && duration > 50 && duration < 400) {
       // Short press - go to main menu (except when already there)
       if (currentState != UIState::MAIN_MENU) {
         if (currentState == UIState::TEXT_EDITOR && editorHasUnsavedChanges()) {
