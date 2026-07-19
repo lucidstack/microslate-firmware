@@ -1,7 +1,12 @@
 #include <Arduino.h>
+#include <Bitmap.h>
 #include <HalDisplay.h>
 #include <HalGPIO.h>
 #include <GfxRenderer.h>
+#include <esp_system.h>
+
+#include <string>
+#include <vector>
 #include <esp_pm.h>
 #include <esp_ota_ops.h>
 #include <esp_app_format.h>
@@ -105,6 +110,10 @@ static void detectOtaApps() {
         OtaAppEntry& entry = otaApps[otaAppCount];
         if (nvsName.length() > 0) {
           strncpy(entry.name, nvsName.c_str(), sizeof(entry.name) - 1);
+        } else if (desc.project_name[0] != '\0') {
+          // App never registered a display name (e.g. an unpatched reader
+          // firmware like Crossink) — use its build-time project name.
+          strncpy(entry.name, desc.project_name, sizeof(entry.name) - 1);
         } else {
           snprintf(entry.name, sizeof(entry.name), "OTA Slot %d", slot);
         }
@@ -573,7 +582,96 @@ void registerActivity() {
 }
 
 // Function to render the sleep screen
+// --- Sleep wallpapers --------------------------------------------------------
+// CrossInk-compatible custom sleep screens: a random BMP from /.sleep (or
+// /sleep) on the SD card — the same folders a CrossInk install in the other
+// OTA slot uses, so both firmwares share one wallpaper set. Falls back to
+// /sleep.bmp, then to the built-in text sleep screen.
+
+static bool drawSleepBitmapCentered(FsFile& file) {
+  Bitmap bitmap(file, true);  // dithered for the e-ink panel
+  if (bitmap.parseHeaders() != BmpReaderError::Ok) return false;
+
+  int sw = renderer.getScreenWidth();
+  int sh = renderer.getScreenHeight();
+  int x, y;
+  if (bitmap.getWidth() > sw || bitmap.getHeight() > sh) {
+    // drawBitmap scales oversized images down to fit; center the scaled box
+    float ratio = (float)bitmap.getWidth() / (float)bitmap.getHeight();
+    float screenRatio = (float)sw / (float)sh;
+    if (ratio > screenRatio) {
+      x = 0;
+      y = (int)roundf(((float)sh - (float)sw / ratio) / 2.0f);
+    } else {
+      x = (int)roundf(((float)sw - (float)sh * ratio) / 2.0f);
+      y = 0;
+    }
+  } else {
+    x = (sw - bitmap.getWidth()) / 2;
+    y = (sh - bitmap.getHeight()) / 2;
+  }
+
+  renderer.clearScreen();
+  renderer.drawBitmap(bitmap, x, y, sw, sh);
+  renderer.displayBuffer(HalDisplay::FULL_REFRESH);
+  return true;
+}
+
+static bool renderSleepWallpaper() {
+  static const char* kSleepDirs[] = {"/.sleep", "/sleep"};
+  for (const char* dirPath : kSleepDirs) {
+    FsFile dir = SdMan.open(dirPath);
+    if (!dir || !dir.isDirectory()) {
+      if (dir) dir.close();
+      continue;
+    }
+
+    std::vector<std::string> files;
+    char name[128];
+    for (FsFile f = dir.openNextFile(); f; f = dir.openNextFile()) {
+      if (!f.isDirectory()) {
+        f.getName(name, sizeof(name));
+        size_t len = strlen(name);
+        if (name[0] != '.' && len > 4 && strcasecmp(name + len - 4, ".bmp") == 0) {
+          files.emplace_back(name);
+        }
+      }
+      f.close();
+    }
+    dir.close();
+
+    if (files.empty()) continue;
+
+    // Hardware RNG: Arduino random() is unseeded and deep-sleep wake is a
+    // fresh boot, so it would show the same wallpaper every time.
+    // Retry a couple of times so one corrupt BMP doesn't kill the feature.
+    for (int attempt = 0; attempt < 3; attempt++) {
+      std::string path = std::string(dirPath) + "/" + files[esp_random() % files.size()];
+      FsFile file;
+      if (!SdMan.openFileForRead("SLP", path, file)) continue;
+      bool ok = drawSleepBitmapCentered(file);
+      file.close();
+      if (ok) return true;
+    }
+  }
+
+  // Single-file fallback, also shared with CrossInk
+  FsFile file;
+  if (SdMan.openFileForRead("SLP", "/sleep.bmp", file)) {
+    bool ok = drawSleepBitmapCentered(file);
+    file.close();
+    if (ok) return true;
+  }
+  return false;
+}
+
 void renderSleepScreen() {
+  // Wallpaper sleep screen (shared with CrossInk); text screen as fallback
+  if (renderSleepWallpaper()) {
+    delay(500);
+    return;
+  }
+
   renderer.clearScreen();
   
   int sw = renderer.getScreenWidth();
