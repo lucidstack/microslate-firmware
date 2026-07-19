@@ -615,9 +615,9 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
     char passkeyStr[32];
     drawClippedText(renderer, FONT_UI, 20, 100, "PAIRING CODE:", 0, tc, EpdFontFamily::BOLD);
     snprintf(passkeyStr, sizeof(passkeyStr), "%06lu", passkey);
-    drawClippedText(renderer, FONT_BODY, 20, 130, passkeyStr, 0, tc, EpdFontFamily::BOLD);
-    drawClippedText(renderer, FONT_SMALL, 20, 160, "Type this code on your keyboard", 0, tc);
-    drawClippedText(renderer, FONT_SMALL, 20, 180, "then press Enter", 0, tc);
+    drawClippedText(renderer, FONT_BODY, 20, 145, passkeyStr, 0, tc, EpdFontFamily::BOLD);
+    drawClippedText(renderer, FONT_SMALL, 20, 195, "Type this code on your keyboard", 0, tc);
+    drawClippedText(renderer, FONT_SMALL, 20, 222, "then press Enter", 0, tc);
   } else if (isDeviceScanning()) {
     static uint8_t dotPhase = 0;
     static uint32_t lastAnimMs = 0;
@@ -629,11 +629,11 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
     char scanningStr[64];
     int deviceCount = getDiscoveredDeviceCount();
     snprintf(scanningStr, sizeof(scanningStr), "Searching for devices%s", dots.c_str());
-    drawClippedText(renderer, FONT_SMALL, 10, 60, scanningStr, sw / 2 - 10, tc);
+    drawClippedText(renderer, FONT_SMALL, 10, 72, scanningStr, sw / 2 - 10, tc);
 
     char foundStr[32];
     snprintf(foundStr, sizeof(foundStr), "Found: %d", deviceCount);
-    drawClippedText(renderer, FONT_SMALL, sw / 2, 60, foundStr, sw / 2 - 10, tc);
+    drawClippedText(renderer, FONT_SMALL, sw / 2, 72, foundStr, sw / 2 - 10, tc);
   }
 
   // Device list
@@ -643,10 +643,16 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
 
     char headerStr[64];
     snprintf(headerStr, sizeof(headerStr), "Available devices: %d", deviceCount);
-    drawClippedText(renderer, FONT_SMALL, 10, 70, headerStr, 0, tc, EpdFontFamily::BOLD);
+    drawClippedText(renderer, FONT_SMALL, 10, 100, headerStr, 0, tc, EpdFontFamily::BOLD);
 
-    // Show up to 10 devices (pagination via scrolling)
-    int maxDevicesToShow = 10;
+    // Row pitch must exceed FONT_UI's line height (34px) or glyphs clip.
+    // Fit as many rows as the space between list top and footer zone allows.
+    const int listTop = 130;
+    const int rowH = 38;
+    int maxDevicesToShow = (sh - 100 - listTop) / rowH + 1;
+    // Reserve the last row for the page indicator when the list overflows
+    if (deviceCount > maxDevicesToShow) maxDevicesToShow--;
+    if (maxDevicesToShow < 1) maxDevicesToShow = 1;
     int startIndex = 0;
     if (bluetoothDeviceSelection >= maxDevicesToShow) {
       startIndex = bluetoothDeviceSelection - maxDevicesToShow + 1;
@@ -656,7 +662,7 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
 
     for (int i = 0; i < devicesToShow; i++) {
       int deviceIndex = startIndex + i;
-      int yPos = 90 + (i * 30);
+      int yPos = listTop + (i * rowH);
 
       // Stop drawing if we'd go into the footer zone
       if (yPos > sh - 100) break;
@@ -672,16 +678,18 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
       int nameMaxW = sw - 100;
 
       if (isSelected || isConnected) {
-        clippedFillRect(renderer, 5, yPos - 5, sw - 10, 25, tc);
+        // Highlight must cover the full FONT_UI ascender (27px below yPos)
+        clippedFillRect(renderer, 5, yPos - 4, sw - 10, rowH - 4, tc);
         drawClippedText(renderer, FONT_UI, 15, yPos, displayName, nameMaxW, !tc);
       } else {
         drawClippedText(renderer, FONT_UI, 15, yPos, displayName, nameMaxW, tc);
       }
 
-      // RSSI on the right
+      // RSSI on the right; +7 aligns FONT_SMALL's baseline with FONT_UI's
       char rssiStr[16];
       snprintf(rssiStr, sizeof(rssiStr), "%ddBm", devices[deviceIndex].rssi);
-      drawRightText(renderer, FONT_SMALL, sw - 10, yPos, rssiStr, tc);
+      drawRightText(renderer, FONT_SMALL, sw - 10, yPos + 7, rssiStr,
+                    (isSelected || isConnected) ? !tc : tc);
     }
 
     // Page indicator
@@ -690,21 +698,21 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
       int pageNum = (bluetoothDeviceSelection / maxDevicesToShow) + 1;
       int totalPages = (deviceCount + maxDevicesToShow - 1) / maxDevicesToShow;
       snprintf(navHint, sizeof(navHint), "Page %d/%d", pageNum, totalPages);
-      int navY = 90 + (devicesToShow * 30);
-      if (navY < sh - 100)
+      int navY = listTop + (devicesToShow * rowH);
+      if (navY <= sh - 100)
         drawClippedText(renderer, FONT_SMALL, 15, navY, navHint, 0, tc);
     }
   } else {
     drawClippedText(renderer, FONT_UI, 20, 80, "No devices found", 0, tc);
-    drawClippedText(renderer, FONT_SMALL, 20, 100, "Press Enter to scan for devices", 0, tc);
+    drawClippedText(renderer, FONT_SMALL, 20, 120, "Press Enter to scan for devices", 0, tc);
   }
 
-  // Footer
+  // Footer — FONT_SMALL needs 24px per line (advanceY), so 6/32 offsets
   constexpr int bm = 60;
   if (sh > bm + 30) {
     clippedLine(renderer, 10, sh - bm, sw - 10, sh - bm, tc);
-    drawClippedText(renderer, FONT_SMALL, 10, sh - bm + 8,  "Enter:Connect  Right:Scan", 0, tc);
-    drawClippedText(renderer, FONT_SMALL, 10, sh - bm + 22, "Left:Disconnect  Esc:Back", 0, tc);
+    drawClippedText(renderer, FONT_SMALL, 10, sh - bm + 6,  "Enter:Connect  Right:Scan", 0, tc);
+    drawClippedText(renderer, FONT_SMALL, 10, sh - bm + 32, "Left:Disconnect  Esc:Back", 0, tc);
   }
 
   renderer.beginRefresh(HalDisplay::FAST_REFRESH);
